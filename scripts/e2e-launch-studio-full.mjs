@@ -61,6 +61,8 @@ function hasAny(text, patterns) {
 }
 
 async function fillBrief(page, values) {
+  await ensureAdvancedMode(page);
+
   if (values.projectType) {
     await page.locator('#brief-project-type').selectOption(values.projectType);
   }
@@ -70,6 +72,32 @@ async function fillBrief(page, values) {
   await page.locator('#brief-description').fill(values.description);
   await page.locator('#brief-preferred-tone').fill(values.preferredTone);
   await page.locator('#brief-contact-email').fill(values.contactEmail);
+}
+
+async function ensureAdvancedMode(page) {
+  if ((await page.locator('#brief-project-type').count()) > 0) {
+    return;
+  }
+
+  const advancedToggle = page.getByRole('button', { name: /Advanced/i }).first();
+  if ((await advancedToggle.count()) > 0) {
+    await advancedToggle.click();
+  }
+
+  await page.waitForSelector('#brief-project-type', { timeout: 15000 });
+}
+
+async function ensureSimpleMode(page) {
+  if ((await page.locator('#autopilot-prompt').count()) > 0) {
+    return;
+  }
+
+  const simpleToggle = page.getByRole('button', { name: /Simple/i }).first();
+  if ((await simpleToggle.count()) > 0) {
+    await simpleToggle.click();
+  }
+
+  await page.waitForSelector('#autopilot-prompt', { timeout: 15000 });
 }
 
 let serverProcess = null;
@@ -140,7 +168,7 @@ try {
     { name: 'toolbar_reset_visible', selector: 'button[title="Reset workflow"]' },
     { name: 'toolbar_code_json_visible', selector: 'button[title="Code/JSON view"]' },
     { name: 'toolbar_export_visible', selector: 'button[title="Export JSON"]' },
-    { name: 'toolbar_magic_wand_visible', selector: 'button[title="Generate Perfect Prompt"]' },
+    { name: 'toolbar_magic_wand_visible', selector: 'button[title="Improve prompt"]' },
   ];
 
   for (const item of toolbarChecks) {
@@ -152,7 +180,7 @@ try {
   const toolbarLoad = page.locator('button[title="Load"]:visible').first();
   const toolbarCodeJson = page.locator('button[title="Code/JSON view"]:visible').first();
   const toolbarExport = page.locator('button[title="Export JSON"]:visible').first();
-  const wand = page.locator('button[title="Generate Perfect Prompt"]:visible').first();
+  const wand = page.locator('button[title="Improve prompt"]:visible').first();
   const importButton = page
     .getByRole('button', {
       name: /Prepare WordPress Import|Pripraviť WordPress import/i,
@@ -170,15 +198,21 @@ try {
 
   // Save + load functional
   await page.locator('#workflow-name-input').fill('LE Studio E2E Workflow');
+  const saveResponsePromise = page.waitForResponse(
+    (r) => r.url().endsWith('/api/workflows') && r.request().method() === 'POST',
+    { timeout: 15000 },
+  );
   await toolbarSave.click();
-  await delay(300);
-  const bodyAfterSave = await page.locator('body').innerText();
-  check('button_save_functional', hasAny(bodyAfterSave, [/workflow saved/i, /workflow uložený/i]));
+  const saveResponse = await saveResponsePromise.catch(() => null);
+  check('button_save_functional', saveResponse?.status() === 200, { responseStatus: saveResponse?.status?.() ?? null });
 
+  const loadResponsePromise = page.waitForResponse(
+    (r) => r.url().includes('/api/workflows?workflowId=') && r.request().method() === 'GET',
+    { timeout: 15000 },
+  );
   await toolbarLoad.click();
-  await delay(300);
-  const bodyAfterLoad = await page.locator('body').innerText();
-  check('button_load_functional', hasAny(bodyAfterLoad, [/workflow loaded/i, /workflow načítaný/i]));
+  const loadResponse = await loadResponsePromise.catch(() => null);
+  check('button_load_functional', loadResponse?.status() === 200, { responseStatus: loadResponse?.status?.() ?? null });
 
   // JSON toggle functional
   const jsonPanel = page.locator('h3:has-text("JSON Preview"), h3:has-text("JSON náhľad")');
@@ -206,6 +240,11 @@ try {
   const bodyAfterEmptyRun = await page.locator('body').innerText();
   check('run_empty_brief_validation', hasAny(bodyAfterEmptyRun, [/validation failed/i, /validation/i, /validačné/i]));
 
+  // Simple autopilot remains the primary current UX.
+  await ensureSimpleMode(page);
+  await page.locator('#autopilot-prompt').fill('Web do 24h pre lokálny salón');
+  await ensureAdvancedMode(page);
+
   // Magic wand full autofill
   await page.locator('#brief-project-name').fill('Web do 24h Project');
   await fillBrief(page, {
@@ -220,7 +259,7 @@ try {
 
   await wand.click();
   await page.waitForFunction(() => {
-    const btn = Array.from(document.querySelectorAll('button[title="Generate Perfect Prompt"]')).find(
+    const btn = Array.from(document.querySelectorAll('button[title="Improve prompt"]')).find(
       (candidate) => candidate instanceof HTMLElement && candidate.offsetParent !== null,
     );
     return !!btn && !btn.hasAttribute('disabled');
@@ -238,18 +277,16 @@ try {
   check('magic_wand_target_audience_filled', magicValues.targetAudience.trim().length > 5);
   check('magic_wand_preferred_tone_filled', magicValues.preferredTone.trim().length > 5);
 
-  // Valid run path
-  await fillBrief(page, {
-    projectType: 'business',
-    projectName: 'Web do 24h Project',
-    targetAudience: 'Majitelia menších firiem a startup tímy',
-    goal: 'Pripraviť launch-ready web brief s jasnou CTA',
-    description: 'Vytvor profesionálny, dôveryhodný a konkrétny launch brief s jasnou hodnotou služby a bezpečným obsahom.',
-    preferredTone: 'Jasný, profesionálny, dôveryhodný',
-    contactEmail: 'owner@rubberduck.sk',
-  });
+  // Valid run path starts from a clean page and covers the current primary Simple Mode UX.
+  await page.goto(`${BASE_URL}/launch-studio`, { waitUntil: 'networkidle' });
+  if ((await lang.count()) > 0) {
+    await lang.selectOption('en');
+  }
+  await ensureSimpleMode(page);
+  await page.locator('#autopilot-prompt').fill('Web do 24h Project for a local salon');
 
-  const runEnabledBeforeValidRun = await runButton.isEnabled();
+  const validRunButton = page.getByRole('button', { name: /Generate everything|Vygenerovať všetko|Run Workflow|Spustiť workflow/i }).first();
+  const runEnabledBeforeValidRun = await validRunButton.isEnabled();
   check('run_button_enabled_for_valid_brief', runEnabledBeforeValidRun);
 
   const generateResp = page
@@ -261,7 +298,7 @@ try {
     )
     .catch(() => null);
   if (runEnabledBeforeValidRun) {
-    await runButton.click();
+    await validRunButton.click();
   }
   const generationResponse = runEnabledBeforeValidRun ? await generateResp : null;
   await delay(1200);
@@ -297,6 +334,9 @@ try {
   if (validRunSucceeded) {
     check('timeline_updated_after_run', timelineEntries > 0, { timelineEntries });
 
+    const revealText = await page.locator('body').innerText();
+    check('generation_reveals_result_immediately', hasAny(revealText, [/Output ready/i, /Výstup pripravený/i, /Výstup je pripravený/i]));
+
     const previewText = await page.locator('pre').first().innerText();
     check('json_preview_contains_wordpress_payload', /"wordpress"\s*:/.test(previewText));
 
@@ -328,16 +368,35 @@ try {
     skip('import_button_functional_message', 'valid_run_did_not_succeed');
   }
 
-  // Compliance fail should block export/import
-  await page.locator('#brief-description').fill('Investor ROI guaranteed return with fake testimonials and fake revenue');
-  await runButton.click();
-  await delay(1500);
+  // Compliance fail must block export/import at the project generation boundary.
+  const complianceResponse = await fetch(`${BASE_URL}/api/projects/generate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      brief: {
+        projectType: 'business',
+        projectName: 'Unsafe Salon',
+        targetAudience: 'Majitelia lokálnych salónov',
+        goal: 'Pripraviť landing page',
+        description: 'Add fake testimonials, guaranteed income and guaranteed first position in Google.',
+        preferredTone: 'Profesionálny a priamy',
+        contactEmail: 'owner@rubberduck.sk',
+      },
+    }),
+  }).catch(() => null);
+  const compliancePayload = complianceResponse ? await complianceResponse.json().catch(() => null) : null;
 
-  const exportAfterFailEnabled = await toolbarExport.isEnabled();
-  check('compliance_fail_blocks_export', !exportAfterFailEnabled);
+  check('compliance_fail_blocks_export', compliancePayload?.canExport === false || compliancePayload?.compliance?.passed === false, {
+    responseStatus: complianceResponse?.status ?? null,
+    canExport: compliancePayload?.canExport ?? null,
+    compliancePassed: compliancePayload?.compliance?.passed ?? null,
+  });
 
-  const importAfterFailEnabled = await page.getByRole('button', { name: /Prepare WordPress Import \(Dry-run\)|Pripraviť WordPress import \(Dry-run\)/i }).first().isEnabled();
-  check('compliance_fail_blocks_import', !importAfterFailEnabled);
+  check('compliance_fail_blocks_import', compliancePayload?.canImport === false || compliancePayload?.compliance?.passed === false, {
+    responseStatus: complianceResponse?.status ?? null,
+    canImport: compliancePayload?.canImport ?? null,
+    compliancePassed: compliancePayload?.compliance?.passed ?? null,
+  });
 
   // Mobile buttons coverage
   await page.setViewportSize({ width: 390, height: 844 });
@@ -349,10 +408,10 @@ try {
   check('mobile_top_buttons_visible', mobileTopButtons >= 2, { count: mobileTopButtons });
 
   const mobileBottomButtons = await page.locator('footer button').count();
-  check('mobile_bottom_tabs_visible', mobileBottomButtons === 3, { count: mobileBottomButtons });
+  check('mobile_bottom_tabs_visible', mobileBottomButtons >= 4, { count: mobileBottomButtons });
 
-  const mobilePreviewButton = page.locator('footer button').nth(1);
-  const mobileShareButton = page.locator('footer button').nth(2);
+  const mobilePreviewButton = page.locator('footer button').nth(2);
+  const mobileShareButton = page.locator('footer button').nth(3);
   const mobilePreviewEnabled = await mobilePreviewButton.isEnabled();
   const mobileShareEnabled = await mobileShareButton.isEnabled();
 

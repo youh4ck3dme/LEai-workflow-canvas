@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import path from 'node:path';
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.SMOKE_BASE_URL || 'http://localhost:3110';
 const outFile = process.env.SMOKE_OUTPUT_FILE || 'docs/samples/.tmp-smoke-export.json';
 
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
+const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
 
 const consoleErrors = [];
 page.on('console', (msg) => {
@@ -18,18 +19,26 @@ page.on('console', (msg) => {
 await page.goto(`${baseUrl}/launch-studio`, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('text=/LE Studio|Launch Studio/i', { timeout: 15000 });
 
-// language switcher + project type
+// language switcher + current primary simple-mode UX
 if (await page.locator('#language-switcher').count()) {
   await page.locator('#language-switcher').selectOption('sk');
 }
-await page.locator('#brief-project-type').selectOption('support-campaign');
 
-await page.locator('#brief-project-name').fill('Web do 24h Project');
-await page.locator('#brief-target-audience').fill('Majitelia malých a stredných firiem, lokálni podnikatelia, salóny, ambulancie, služby a startupy.');
-await page.locator('#brief-goal').fill('Vytvoriť kvalitnú landing page a štruktúru kampane pre službu Web do 24h.');
-await page.locator('#brief-description').fill('Profesionálny výstup pre projekt Web do 24h so zameraním na dôveru, konverzie a bezpečný dry-run import payload bez fake tvrdení.');
-await page.locator('#brief-preferred-tone').fill('Jasný, profesionálny, priamy, dôveryhodný, technicky kompetentný.');
-await page.locator('#brief-contact-email').fill('owner@rubberduck.sk');
+if (await page.locator('#autopilot-prompt').count()) {
+  await page.locator('#autopilot-prompt').fill('Web do 24h pre lokálny salón');
+} else {
+  const advancedToggle = page.getByRole('button', { name: /Advanced/i }).first();
+  if (await advancedToggle.count()) {
+    await advancedToggle.click();
+  }
+  await page.locator('#brief-project-type').selectOption('support-campaign');
+  await page.locator('#brief-project-name').fill('Web do 24h Project');
+  await page.locator('#brief-target-audience').fill('Majitelia malých a stredných firiem, lokálni podnikatelia, salóny, ambulancie, služby a startupy.');
+  await page.locator('#brief-goal').fill('Vytvoriť kvalitnú landing page a štruktúru kampane pre službu Web do 24h.');
+  await page.locator('#brief-description').fill('Profesionálny výstup pre projekt Web do 24h so zameraním na dôveru, konverzie a bezpečný import payload bez fake tvrdení.');
+  await page.locator('#brief-preferred-tone').fill('Jasný, profesionálny, priamy, dôveryhodný, technicky kompetentný.');
+  await page.locator('#brief-contact-email').fill('owner@rubberduck.sk');
+}
 
 const responsePromise = page.waitForResponse((r) => r.url().includes('/api/projects/generate') && r.request().method() === 'POST');
 await page.getByRole('button', { name: /Run Workflow|Spustiť workflow|Generate|Generovať/i }).first().click();
@@ -40,10 +49,15 @@ if (!json?.project) {
   throw new Error('Missing project payload in /api/projects/generate response');
 }
 
+fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.writeFileSync(outFile, JSON.stringify(json.project, null, 2));
 
+await page.waitForSelector('text=/Výstup pripravený|Výstup je pripravený|Output ready/i', { timeout: 15000 });
+
 const importResponsePromise = page.waitForResponse((r) => r.url().includes('/api/projects/import') && r.request().method() === 'POST');
-await page.getByRole('button', { name: /Prepare WordPress Import \(Dry-run\)|Pripraviť WordPress import \(Dry-run\)/i }).click();
+const importButton = page.getByRole('button', { name: /Prepare WordPress Import \(Dry-run\)|Pripraviť WordPress import \(Dry-run\)/i }).first();
+await importButton.scrollIntoViewIfNeeded();
+await importButton.click();
 const importResponse = await importResponsePromise;
 const importJson = await importResponse.json();
 

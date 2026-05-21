@@ -6,7 +6,7 @@
 
 Final export must include:
 
-- `dryRun: true`
+- `dryRun: false`
 - `productionWrite: false`
 - `wordpressPostId: null`
 - `sourceOfTruth: "meta.numbers"`
@@ -69,8 +69,9 @@ Final export must include:
 
 ## Dry-run safety rules
 
-- Import button prepares payload preview only.
-- No production write in LE Studio mode.
+- LE Studio runs in live generation mode, but WordPress writes stay server-guarded.
+- Import button prepares payload preview only unless an explicit server-side production guard is enabled.
+- `dryRun: false` means the generated content is live user input/output, not mock data.
 - `wordpressPostId` always stays `null`.
 - `wordpress.postStatus` must be `draft`.
 
@@ -111,6 +112,8 @@ Final export must include:
 
 - `web-do-24h-source-of-truth.valid.json`
 - `web-do-24h-source-of-truth.invalid.json`
+- `web-do-24h-launch-pack.legacy-invalid.json` is an old pre-`meta.numbers` fixture and must fail the current validator.
+- `launch-studio-dry-run-export.json` is retained only as a legacy dry-run sample and must not be used as the current valid export contract.
 
 ## Validator
 
