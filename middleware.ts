@@ -31,8 +31,47 @@ function detectLocale(request: NextRequest): Locale {
   return DEFAULT_LOCALE;
 }
 
+function sameOriginApiRequest(request: NextRequest): boolean {
+  const host = request.headers.get("host");
+  if (!host) return false;
+
+  const origin = request.headers.get("origin");
+  if (origin) {
+    try {
+      if (new URL(origin).host === host) return true;
+    } catch {}
+  }
+
+  const referer = request.headers.get("referer");
+  if (referer) {
+    try {
+      if (new URL(referer).host === host) return true;
+    } catch {}
+  }
+
+  return false;
+}
+
 export function middleware(request: NextRequest) {
-  const response = NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  const isGuardedApiPath =
+    request.nextUrl.pathname === "/api/ai/generate" ||
+    request.nextUrl.pathname === "/api/projects/generate" ||
+    request.nextUrl.pathname === "/api/projects/import" ||
+    /\/api\/workflows\/[^/]+\/run$/.test(request.nextUrl.pathname);
+
+  if (
+    isGuardedApiPath &&
+    !requestHeaders.get("authorization") &&
+    sameOriginApiRequest(request)
+  ) {
+    const pilotToken = process.env.LE_PILOT_TOKEN?.trim();
+    if (pilotToken) {
+      requestHeaders.set("authorization", `Bearer ${pilotToken}`);
+    }
+  }
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   const cookieLocale = request.cookies.get(LOCALE_COOKIE)?.value;
 
   if (!isLocale(cookieLocale)) {
