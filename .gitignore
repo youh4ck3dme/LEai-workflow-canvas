@@ -11,6 +11,10 @@ node_modules/
 .env*.local
 .DS_Store
 .vercel
+.vercel.bak*
+*.log
+*.tmp
+components/workflow/msitral.md
 
 # Local QA artifacts
 qa-artifacts/
