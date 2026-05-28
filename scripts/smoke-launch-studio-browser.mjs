@@ -7,7 +7,7 @@ const baseUrl = process.env.SMOKE_BASE_URL || 'http://localhost:3110';
 const outFile = process.env.SMOKE_OUTPUT_FILE || 'docs/samples/.tmp-smoke-export.json';
 
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
+const page = await browser.newPage({ viewport: { width: 1440, height: 980 }, acceptDownloads: true });
 
 const consoleErrors = [];
 page.on('console', (msg) => {
@@ -53,6 +53,20 @@ fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.writeFileSync(outFile, JSON.stringify(json.project, null, 2));
 
 await page.waitForSelector('text=/Výstup pripravený|Výstup je pripravený|Output ready/i', { timeout: 15000 });
+await page.waitForFunction(() => /Vizuálny náhľad|Visual Preview/i.test(document.body.innerText), null, { timeout: 15000 });
+const visualPreviewText = await page.locator('body').innerText();
+const jsonTab = page.locator('button[role="tab"]:visible', { hasText: /JSON Preview|JSON náhľad/i }).first();
+const payloadTab = page.locator('button[role="tab"]:visible', { hasText: /WordPress Payload|WordPress payload/i }).first();
+await jsonTab.click();
+await page.waitForSelector('pre:visible', { timeout: 15000 });
+const jsonPreviewText = await page.locator('pre:visible').first().innerText();
+await payloadTab.click();
+await page.waitForSelector('pre:visible', { timeout: 15000 });
+const payloadPreviewText = await page.locator('pre:visible').first().innerText();
+const historyTab = page.locator('button[role="tab"]:visible', { hasText: /History|História/i }).first();
+await historyTab.click();
+await page.waitForFunction(() => /Last 10 validated generations|Posledných 10 validovaných generácií/i.test(document.body.innerText), null, { timeout: 15000 });
+const historyText = await page.locator('body').innerText();
 
 const importResponsePromise = page.waitForResponse((r) => r.url().includes('/api/projects/import') && r.request().method() === 'POST');
 const importButton = page.getByRole('button', { name: /Prepare WordPress Import \(Dry-run\)|Pripraviť WordPress import \(Dry-run\)/i }).first();
@@ -71,6 +85,13 @@ const summary = {
   importMessage: importJson?.message,
   importDryRun: importJson?.dryRun,
   importPreviewHasMain: Boolean(importJson?.payloadPreview?.main),
+  visualPreviewVisible: /Vizuálny náhľad|Visual Preview/.test(visualPreviewText),
+  visualPreviewHasFaq: /FAQ/.test(visualPreviewText),
+  jsonPreviewHasWordpress: /"wordpress"\s*:/.test(jsonPreviewText),
+  payloadPreviewHasMain: /"main"\s*:/.test(payloadPreviewText),
+  historyTabVisible: await historyTab.count() > 0,
+  historyRecordVisible: /Web do 24h|local salon|lokálny salón/i.test(historyText),
+  historyHasAudit: /generatedAt|projectId|sourceOfTruth/i.test(historyText),
   consoleErrors,
 };
 

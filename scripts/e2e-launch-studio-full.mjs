@@ -122,7 +122,7 @@ try {
   }
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
+  const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage({ viewport: { width: 1440, height: 980 } });
 
   const consoleErrors = [];
@@ -214,15 +214,15 @@ try {
   const loadResponse = await loadResponsePromise.catch(() => null);
   check('button_load_functional', loadResponse?.status() === 200, { responseStatus: loadResponse?.status?.() ?? null });
 
-  // JSON toggle functional
-  const jsonPanel = page.locator('h3:has-text("JSON Preview"), h3:has-text("JSON náhľad")');
-  const jsonVisibleBefore = await jsonPanel.count() > 0;
+  // Result/JSON toggle functional
+  const resultTabs = page.locator('button[role="tab"]:visible');
+  const jsonVisibleBefore = await resultTabs.count() > 0;
   await toolbarCodeJson.click();
   await delay(300);
-  const jsonVisibleAfterToggle = await jsonPanel.count() > 0;
+  const jsonVisibleAfterToggle = await resultTabs.count() > 0;
   await toolbarCodeJson.click();
   await delay(300);
-  const jsonVisibleAfterToggleBack = await jsonPanel.count() > 0;
+  const jsonVisibleAfterToggleBack = await resultTabs.count() > 0;
   check('button_json_toggle_functional', jsonVisibleBefore && jsonVisibleBefore !== jsonVisibleAfterToggle && jsonVisibleAfterToggleBack);
 
   // Run with empty brief -> validation fail
@@ -336,9 +336,70 @@ try {
 
     const revealText = await page.locator('body').innerText();
     check('generation_reveals_result_immediately', hasAny(revealText, [/Output ready/i, /Výstup pripravený/i, /Výstup je pripravený/i]));
+    check('visual_preview_visible_after_generation', hasAny(revealText, [/Visual Preview/i, /Vizuálny náhľad/i]));
+    check('visual_preview_contains_generated_title', hasAny(revealText, [/Moderný firemný web/i, /Modern business website/i, /web pripravený/i]));
+    check('visual_preview_contains_cta_and_faq', hasAny(revealText, [/Poslať brief/i, /Send brief/i]) && /FAQ/i.test(revealText));
 
+    const jsonTab = page.getByRole('tab', { name: /JSON Preview|JSON náhľad/i }).first();
+    const payloadTab = page.getByRole('tab', { name: /WordPress Payload|WordPress payload/i }).first();
+    check('json_tab_available', await jsonTab.count() > 0);
+    check('payload_tab_available', await payloadTab.count() > 0);
+
+    await jsonTab.click();
+    await delay(250);
     const previewText = await page.locator('pre').first().innerText();
     check('json_preview_contains_wordpress_payload', /"wordpress"\s*:/.test(previewText));
+
+    await payloadTab.click();
+    await delay(250);
+    const payloadPreviewText = await page.locator('pre').first().innerText();
+    check('payload_tab_contains_wordpress_main', /"main"\s*:/.test(payloadPreviewText) && /"postStatus"\s*:\s*"draft"/.test(payloadPreviewText));
+
+    const historyTab = page.getByRole('tab', { name: /History|História/i }).first();
+    check('history_tab_available', await historyTab.count() > 0);
+    await historyTab.click();
+    await delay(300);
+    const historyText = await page.locator('body').innerText();
+    check('history_record_created_after_generation', hasAny(historyText, [/Last 10 validated generations/i, /Posledných 10 validovaných generácií/i]) && hasAny(historyText, [/Web do 24h/i, /local salon/i]));
+    check('history_audit_summary_visible', /generatedAt|projectId|sourceOfTruth|schemaVersion/i.test(historyText));
+
+    const compareButton = page.getByRole('button', { name: /Compare|Porovnať/i }).first();
+    check('history_compare_button_visible', await compareButton.count() > 0);
+    if (await compareButton.count()) {
+      await compareButton.click();
+      await delay(250);
+      const compareText = await page.locator('body').innerText();
+      check('history_compare_panel_shows_fields', /wordpress\.main\.title|seo\.description|faq count|services count/i.test(compareText));
+    }
+
+    const exportVersionButton = page.getByRole('button', { name: /Export version|Exportovať verziu/i }).first();
+    check('history_export_version_button_visible', await exportVersionButton.count() > 0);
+    if (await exportVersionButton.count()) {
+      const downloadPromise = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+      await exportVersionButton.click();
+      const download = await downloadPromise;
+      check('history_export_version_downloads_json', Boolean(download), { suggestedFilename: download?.suggestedFilename?.() ?? null });
+    }
+
+    const restoreButton = page.getByRole('button', { name: /Restore|Obnoviť/i }).first();
+    check('history_restore_button_visible', await restoreButton.count() > 0);
+    if (await restoreButton.count()) {
+      await restoreButton.click();
+      await delay(300);
+      const restoredText = await page.locator('body').innerText();
+      check('history_restore_opens_visual_preview', hasAny(restoredText, [/Version restored/i, /Verzia obnovená/i]) && hasAny(restoredText, [/Visual Preview/i, /Vizuálny náhľad/i]));
+    }
+
+    const historyStorageInfo = await page.evaluate(() => {
+      const raw = localStorage.getItem('le-studio:generation-history:v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return {
+        count: Array.isArray(parsed) ? parsed.length : -1,
+        text: raw || '',
+      };
+    });
+    check('history_storage_max_10_records', historyStorageInfo.count >= 1 && historyStorageInfo.count <= 10, { count: historyStorageInfo.count });
+    check('history_storage_no_secret_signals', !/mistral_api_key|ai_gateway_api_key|authorization: basic|begin private key|password\s*[:=]|token\s*[:=]/i.test(historyStorageInfo.text));
 
     const toolbarExportEnabled = await toolbarExport.isEnabled();
     check('toolbar_export_enabled_after_valid_run', toolbarExportEnabled);
@@ -398,9 +459,19 @@ try {
     compliancePassed: compliancePayload?.compliance?.passed ?? null,
   });
 
+  await page.evaluate(() => localStorage.setItem('le-studio:generation-history:v1', '{broken-json'));
+  await page.goto(`${BASE_URL}/launch-studio`, { waitUntil: 'networkidle' });
+  const recoveredFromCorruptedHistory = await page.locator('body').innerText();
+  check('corrupted_history_storage_does_not_crash', /LE Studio|Launch Studio/i.test(recoveredFromCorruptedHistory));
+
   // Mobile buttons coverage
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/launch-studio`, { waitUntil: 'networkidle' });
+  await page.evaluate(() => {
+    localStorage.removeItem('le-studio:last-generated-payload');
+    localStorage.removeItem('le-studio:generation-history:v1');
+  });
+  await page.reload({ waitUntil: 'networkidle' });
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-390.png'), fullPage: true });
   screenshots.push('mobile-390.png');
 
@@ -409,6 +480,17 @@ try {
 
   const mobileBottomButtons = await page.locator('footer button').count();
   check('mobile_bottom_tabs_visible', mobileBottomButtons >= 4, { count: mobileBottomButtons });
+
+  await ensureSimpleMode(page);
+  await page.locator('#autopilot-prompt').fill('Web do 24h pre mobilný salón');
+  const mobileGenerateResponse = page
+    .waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/api/projects/generate'), { timeout: 60000 })
+    .catch(() => null);
+  await page.getByRole('button', { name: /Generate everything|Vygenerovať všetko|Run Workflow|Spustiť workflow/i }).first().click();
+  const mobileGenerationResponse = await mobileGenerateResponse;
+  await delay(1000);
+  const mobileBodyText = await page.locator('body').innerText();
+  check('mobile_visual_preview_visible_after_generation', mobileGenerationResponse?.status?.() === 200 && hasAny(mobileBodyText, [/Visual Preview/i, /Vizuálny náhľad/i]));
 
   const mobilePreviewButton = page.locator('footer button').nth(2);
   const mobileShareButton = page.locator('footer button').nth(3);
@@ -468,6 +550,15 @@ try {
   const combinedSnapshot = `${JSON.stringify(apiSnapshots)}\n${consoleErrors.join('\n')}`.toLowerCase();
   const leakedSignals = secretSignals.filter((signal) => combinedSnapshot.includes(signal.toLowerCase()));
   check('no_secret_leak_signals', leakedSignals.length === 0, { leakedSignals });
+
+  const previewSources = await Promise.all([
+    fs.readFile('components/workflow/VisualResultPreview.tsx', 'utf8'),
+    fs.readFile('components/workflow/SafeMarkdown.tsx', 'utf8'),
+    fs.readFile('components/workflow/GenerationHistoryPanel.tsx', 'utf8'),
+    fs.readFile('components/workflow/GenerationComparePanel.tsx', 'utf8'),
+  ]);
+  const combinedPreviewSource = previewSources.join('\n');
+  check('preview_components_no_dangerous_html_injection', !/dangerouslySetInnerHTML|\beval\s*\(/.test(combinedPreviewSource));
 
   await browser.close();
 
