@@ -48,10 +48,10 @@
     "workflowLoaded": "Workflow načítaný.",
     "workflowRunFailed": "Spustenie workflow zlyhalo.",
     "exportPrepared": "JSON export je pripravený. Prehliadač uloží súbor do Downloads a posledný payload ostáva uložený v tomto prehliadači.",
-    "resultReady": "Výstup je pripravený. Skontroluj JSON alebo exportuj balík.",
+    "resultReady": "Výstup je pripravený. Skontroluj vizuálny náhľad alebo exportuj balík.",
     "resultReadyA11y": "Výstup je pripravený na kontrolu.",
     "resultRevealTitle": "Výstup pripravený",
-    "resultRevealBody": "JSON preview je otvorený a payload čaká na kontrolu alebo export.",
+    "resultRevealBody": "Vizuálny náhľad je otvorený a payload čaká na kontrolu alebo export.",
     "showJson": "Zobraziť JSON",
     "exportUnavailable": "Export je dostupný až po úspešnej validácii payloadu.",
     "customStepLabel": "Vlastný krok",
@@ -62,7 +62,8 @@
     "magicPromptFallback": "AI vylepšenie briefu neprešlo. Použitý bol bezpečný draft.",
     "magicPromptSuccess": "Kúzelná palička doplnila brief.",
     "magicPromptError": "Kúzelná palička zlyhala. Použitý bol bezpečný draft bez placeholderov.",
-    "mobileActionBarLabel": "Mobilné akcie LE Studio"
+    "mobileActionBarLabel": "Mobilné akcie LE Studio",
+    "showPreview": "Zobraziť preview"
   },
   "projectTypes": {
     "business": "Business landing page",
@@ -362,5 +363,45 @@
     "engineLabel": "Generovací engine",
     "engineHintLocal": "Rýchly lokálny autopilot bez AI volania.",
     "engineHintArchitect": "Mistral najprv rozšíri brief cez Launch Architect prompt, potom sa spustí workflow."
+  },
+  "preview": {
+    "visual": "Vizuálny náhľad",
+    "json": "JSON náhľad",
+    "payload": "WordPress payload",
+    "tabsLabel": "Prepínač náhľadu výsledku",
+    "empty": "Preview sa zobrazí po vygenerovaní výstupu.",
+    "ready": "Výstup je pripravený na vizuálnu kontrolu.",
+    "safeNotice": "Bezpečný náhľad bez produkčného zápisu.",
+    "blocked": "Preview blokovaný validáciou",
+    "validationBlocked": "Payload neprešiel bezpečnostnou alebo schema validáciou, preto sa nevykresľuje ako vizuálny úspech.",
+    "wordpressRenders": "WordPress renderuje finálny layout",
+    "noMedia": "Žiadne médiá neboli dodané. Preview nevymýšľa obrázky.",
+    "services": "Služby",
+    "products": "Produkty",
+    "productsPresent": "Produkty sú v payloade prítomné. Ceny alebo stock sa zobrazia iba ak boli dodané.",
+    "payloadNotice": "Čistá metabox štruktúra, ktorú má WordPress uložiť a renderovať.",
+    "compliancePassed": "Compliance prešla",
+    "complianceFailed": "Compliance zlyhala"
+  },
+  "history": {
+    "title": "História",
+    "subtitle": "Posledných 10 validovaných generácií uložených iba v tomto prehliadači.",
+    "empty": "Žiadne uložené generácie",
+    "restore": "Obnoviť",
+    "compare": "Porovnať",
+    "exportVersion": "Exportovať verziu",
+    "restored": "Verzia obnovená na kontrolu.",
+    "clear": "Vymazať históriu",
+    "cleared": "História bola vymazaná.",
+    "currentVersion": "Aktuálna verzia",
+    "selectedVersion": "Vybraná verzia",
+    "changed": "Zmenené",
+    "same": "Bez zmeny",
+    "compliancePassed": "Compliance prešla",
+    "complianceFailed": "Compliance zlyhala",
+    "audit": "Audit trail",
+    "compareTitle": "Porovnanie verzií",
+    "compareEmpty": "Vyber staršiu verziu na porovnanie.",
+    "compareNeedsCurrent": "Na porovnanie najprv obnov alebo vygeneruj aktuálny výstup."
   }
 }

@@ -48,10 +48,10 @@
     "workflowLoaded": "Workflow loaded.",
     "workflowRunFailed": "Workflow run failed.",
     "exportPrepared": "JSON export is ready. The browser saves the file to Downloads and the latest payload remains stored in this browser.",
-    "resultReady": "Output is ready. Review the JSON or export the package.",
+    "resultReady": "Output is ready. Review the visual preview or export the package.",
     "resultReadyA11y": "Output is ready for review.",
     "resultRevealTitle": "Output ready",
-    "resultRevealBody": "JSON preview is open and the payload is ready for review or export.",
+    "resultRevealBody": "Visual preview is open and the payload is ready for review or export.",
     "showJson": "Show JSON",
     "exportUnavailable": "Export is available after the payload passes validation.",
     "customStepLabel": "Custom Step",
@@ -62,7 +62,8 @@
     "magicPromptFallback": "AI prompt enhancement did not pass. Safe draft was used.",
     "magicPromptSuccess": "Magic wand completed the brief.",
     "magicPromptError": "Magic wand failed. Safe draft without placeholders was used.",
-    "mobileActionBarLabel": "LE Studio mobile actions"
+    "mobileActionBarLabel": "LE Studio mobile actions",
+    "showPreview": "Show preview"
   },
   "projectTypes": {
     "business": "Business landing page",
@@ -362,5 +363,45 @@
     "engineLabel": "Generation engine",
     "engineHintLocal": "Fast local autopilot without an AI call.",
     "engineHintArchitect": "Mistral first expands the brief with the Launch Architect prompt, then the workflow runs."
+  },
+  "preview": {
+    "visual": "Visual Preview",
+    "json": "JSON Preview",
+    "payload": "WordPress Payload",
+    "tabsLabel": "Result preview switcher",
+    "empty": "Preview appears after generating the output.",
+    "ready": "Output is ready for visual review.",
+    "safeNotice": "Safe preview without production write.",
+    "blocked": "Preview blocked by validation",
+    "validationBlocked": "Payload failed security or schema validation, so it is not rendered as a visual success.",
+    "wordpressRenders": "WordPress renders the final layout",
+    "noMedia": "No media was provided. Preview does not invent images.",
+    "services": "Services",
+    "products": "Products",
+    "productsPresent": "Products are present in the payload. Prices or stock are shown only when provided.",
+    "payloadNotice": "Clean metabox structure for WordPress storage and rendering.",
+    "compliancePassed": "Compliance passed",
+    "complianceFailed": "Compliance failed"
+  },
+  "history": {
+    "title": "History",
+    "subtitle": "Last 10 validated generations stored only in this browser.",
+    "empty": "No saved generations",
+    "restore": "Restore",
+    "compare": "Compare",
+    "exportVersion": "Export version",
+    "restored": "Version restored for review.",
+    "clear": "Clear history",
+    "cleared": "History has been cleared.",
+    "currentVersion": "Current version",
+    "selectedVersion": "Selected version",
+    "changed": "Changed",
+    "same": "No change",
+    "compliancePassed": "Compliance passed",
+    "complianceFailed": "Compliance failed",
+    "audit": "Audit trail",
+    "compareTitle": "Version comparison",
+    "compareEmpty": "Choose an older version to compare.",
+    "compareNeedsCurrent": "Restore or generate a current output before comparing."
   }
 }
