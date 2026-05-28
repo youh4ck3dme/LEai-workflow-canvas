@@ -65,6 +65,8 @@ export async function POST(request: Request) {
 
     bodyBytes = parsed.bodyBytes;
     const { provider, model, prompt, systemPrompt, temperature, purpose } = parsed.body;
+    const effectiveProvider =
+      provider || (purpose === "launch-architect" ? "mistral" : "openai");
     const resolvedSystemPrompt =
       purpose === "launch-architect" ? LE_STUDIO_LAUNCH_ARCHITECT_SYSTEM_PROMPT : systemPrompt || undefined;
 
@@ -80,7 +82,7 @@ export async function POST(request: Request) {
       xai: `xai/${model || "grok-3"}`,
     };
 
-    if (provider === "mistral") {
+    if (effectiveProvider === "mistral") {
       const keys = [process.env.MISTRAL_API_KEY, process.env.MISTRAL_API_KEY_BACKUP].filter(Boolean) as string[];
       if (keys.length === 0) {
         if (purpose === "launch-architect") {
@@ -130,7 +132,7 @@ export async function POST(request: Request) {
     }
 
     const { text } = await generateText({
-      model: modelMap[provider] || "openai/gpt-4o",
+      model: modelMap[effectiveProvider] || "openai/gpt-4o",
       prompt,
       system: resolvedSystemPrompt,
       temperature: temperature ?? 0.7,
