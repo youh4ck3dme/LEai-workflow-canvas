@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { TimelineEvent, WorkflowEdge, WorkflowNode } from "@/types/workflow";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n/client";
 
 interface AgentTheatreOverlayProps {
   nodes: WorkflowNode[];
@@ -13,7 +14,7 @@ interface AgentTheatreOverlayProps {
   generated: unknown;
   hasFreshGeneration: boolean;
   canExport: boolean;
-  onShowJson: () => void;
+  onShowPreview: () => void;
   onExport: () => void;
 }
 
@@ -36,9 +37,10 @@ export function AgentTheatreOverlay({
   generated,
   hasFreshGeneration,
   canExport,
-  onShowJson,
+  onShowPreview,
   onExport,
 }: AgentTheatreOverlayProps) {
+  const { translate } = useI18n();
   const [stageLingerRunning, setStageLingerRunning] = useState(false);
 
   useEffect(() => {
@@ -136,21 +138,21 @@ export function AgentTheatreOverlay({
             <span className="mt-2 flex justify-center gap-2">
               <button
                 type="button"
-                onClick={onShowJson}
+                onClick={onShowPreview}
                 className="pointer-events-auto rounded-full border border-emerald-200/20 bg-emerald-300/15 px-3 py-1 text-[10px] font-semibold text-emerald-50 transition-colors hover:bg-emerald-300/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/45"
-                aria-label="Zobraziť JSON"
+                aria-label={translate("app.showPreview")}
               >
-                Zobraziť JSON
+                {translate("app.showPreview")}
               </button>
               <button
                 type="button"
                 onClick={onExport}
                 disabled={!canExport}
-                title={canExport ? "Export JSON" : "Export je dostupný po validácii payloadu."}
+                title={canExport ? translate("common.exportJson") : translate("app.exportUnavailable")}
                 className="pointer-events-auto rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[10px] font-semibold text-white transition-colors hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45"
-                aria-label="Export JSON"
+                aria-label={translate("common.exportJson")}
               >
-                Export JSON
+                {translate("common.exportJson")}
               </button>
             </span>
           ) : null}

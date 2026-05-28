@@ -42,7 +42,7 @@ interface Props {
   generated: unknown;
   hasFreshGeneration: boolean;
   canExport: boolean;
-  onShowJson: () => void;
+  onShowPreview: () => void;
   onExport: () => void;
 }
 
@@ -58,7 +58,7 @@ export function LaunchCanvas({
   generated,
   hasFreshGeneration,
   canExport,
-  onShowJson,
+  onShowPreview,
   onExport,
 }: Props) {
   const themedEdges = useMemo(
@@ -112,7 +112,7 @@ export function LaunchCanvas({
         generated={generated}
         hasFreshGeneration={hasFreshGeneration}
         canExport={canExport}
-        onShowJson={onShowJson}
+        onShowPreview={onShowPreview}
         onExport={onExport}
       />
     </div>

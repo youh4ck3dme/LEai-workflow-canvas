@@ -10,14 +10,26 @@ import { WorkflowToolbar } from "@/components/workflow/WorkflowToolbar";
 import { NodeInspector } from "@/components/workflow/NodeInspector";
 import { ExecutionTimeline } from "@/components/workflow/ExecutionTimeline";
 import { JsonPreview } from "@/components/workflow/JsonPreview";
+import { PreviewTabs, type PreviewTab } from "@/components/workflow/PreviewTabs";
 import { ProjectTypeSelector } from "@/components/workflow/ProjectTypeSelector";
+import { VisualResultPreview } from "@/components/workflow/VisualResultPreview";
+import { GenerationHistoryPanel } from "@/components/workflow/GenerationHistoryPanel";
 import { useI18n } from "@/lib/i18n/client";
 import type { TranslationKey } from "@/lib/i18n";
+import type { SourceOfTruthExport } from "@/lib/launch-studio/source-of-truth-schema";
 import { validateSourceOfTruthExport } from "@/lib/launch-studio/validation";
 import { validateLiveBrief } from "@/lib/launch-studio/brief-validation";
 import { loadProjectConfig, saveProjectConfig } from "@/lib/launch-studio/project-store";
 import { containsForbiddenClaims, containsPlaceholderText, stripHtmlForPlainText } from "@/lib/launch-studio/content-format";
 import { buildLaunchArchitectUserPrompt } from "@/lib/launch-studio/launch-architect-prompt";
+import {
+  clearGenerationHistory,
+  createGenerationHistoryRecord,
+  loadGenerationHistory,
+  restoreGenerationRecord,
+  saveGenerationToHistory,
+  type GenerationHistoryRecord,
+} from "@/lib/launch-studio/generation-history";
 
 const NODE_COPY_KEYS: Record<string, { label: `nodes.${string}.label`; description: `nodes.${string}.description` }> = {
   "project-type": { label: "nodes.project-type.label", description: "nodes.project-type.description" },
@@ -257,6 +269,7 @@ function LaunchStudioInner() {
   const [violations, setViolations] = useState<string[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [showJson, setShowJson] = useState(true);
+  const [activePreviewTab, setActivePreviewTab] = useState<PreviewTab>("visual");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<string>("");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -264,6 +277,8 @@ function LaunchStudioInner() {
   const [isPreparingAutopilot, setIsPreparingAutopilot] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string>("");
   const [hasFreshGeneration, setHasFreshGeneration] = useState(false);
+  const [generationHistory, setGenerationHistory] = useState<GenerationHistoryRecord[]>([]);
+  const [selectedHistoryCompareId, setSelectedHistoryCompareId] = useState<string | null>(null);
   const resultRevealTimerRef = useRef<number | null>(null);
   const mobileResultRef = useRef<HTMLDivElement | null>(null);
   const desktopJsonRef = useRef<HTMLDivElement | null>(null);
@@ -314,6 +329,10 @@ function LaunchStudioInner() {
       setCompliancePassed(gate.valid);
       setValidationErrors(gate.valid ? [] : gate.errors);
     }
+
+    const history = loadGenerationHistory();
+    setGenerationHistory(history);
+    setSelectedHistoryCompareId(history[0]?.id ?? null);
   }, []);
 
   useEffect(() => {
@@ -331,6 +350,7 @@ function LaunchStudioInner() {
 
   const showGeneratedResult = useCallback(() => {
     setShowJson(true);
+    setActivePreviewTab("visual");
     setHasFreshGeneration(true);
     setImportMessage(translate("app.resultReady"));
 
@@ -348,6 +368,42 @@ function LaunchStudioInner() {
       resultRevealTimerRef.current = null;
     }, RESULT_REVEAL_MS);
   }, [translate]);
+
+  const showPreviewTab = useCallback((tab: PreviewTab) => {
+    setActivePreviewTab(tab);
+    setShowJson(true);
+  }, []);
+
+  const saveHistoryVersion = useCallback(
+    (payload: unknown, sourceBrief: LaunchBriefInput) => {
+      const gate = validateSourceOfTruthExport(payload);
+      if (!gate.valid) return;
+
+      const prompt = studioMode === "simple" && simplePrompt.trim()
+        ? simplePrompt
+        : sourceBrief.description || sourceBrief.projectName;
+      const record = createGenerationHistoryRecord(payload as SourceOfTruthExport, {
+        engine: generationEngine,
+        prompt,
+      });
+
+      if (!record) return;
+      const next = saveGenerationToHistory(record);
+      setGenerationHistory(next);
+      setSelectedHistoryCompareId(record.id);
+    },
+    [generationEngine, simplePrompt, studioMode]
+  );
+
+  const toggleResultPanel = useCallback(() => {
+    setShowJson((visible) => {
+      const nextVisible = !visible;
+      if (nextVisible) {
+        setActivePreviewTab("json");
+      }
+      return nextVisible;
+    });
+  }, []);
 
   const generateArchitectBrief = useCallback(
     async (sourceBrief: LaunchBriefInput, overwriteInferredFields: boolean): Promise<{ brief: LaunchBriefInput; usedAi: boolean; error?: string }> => {
@@ -486,6 +542,7 @@ function LaunchStudioInner() {
       if (genRes.ok && genData?.project) {
         setGenerated(genData.project);
         setLastSavedAt(persistGeneratedPayload(genData.project) ?? "");
+        saveHistoryVersion(genData.project, briefToRun);
         const generationCompliancePassed = Boolean(genData?.compliance?.passed);
         const generationViolations: string[] = Array.isArray(genData?.compliance?.violations) ? genData.compliance.violations : [];
         setCompliancePassed(runCompliancePassed && generationCompliancePassed);
@@ -566,18 +623,97 @@ function LaunchStudioInner() {
     setImportMessage("");
   };
 
+  const exportPayload = useCallback(
+    (payload: unknown, filename = "web-do-24h-launch-pack.json") => {
+      const gate = validateSourceOfTruthExport(payload);
+      if (!gate.valid) {
+        setImportMessage(`Validation failed: ${gate.errors.join(", ")}`);
+        return;
+      }
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setImportMessage(translate("app.exportPrepared"));
+    },
+    [translate]
+  );
+
   const handleExport = () => {
     if (!canExport || !generated) return;
     setLastSavedAt(persistGeneratedPayload(generated) ?? "");
-    const blob = new Blob([JSON.stringify(generated, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "web-do-24h-launch-pack.json";
-    a.click();
-    URL.revokeObjectURL(url);
-    setImportMessage(translate("app.exportPrepared"));
+    exportPayload(generated);
   };
+
+  const handleRestoreHistoryVersion = useCallback(
+    (id: string) => {
+      const record = restoreGenerationRecord(id);
+      if (!record) return;
+      const gate = validateSourceOfTruthExport(record.payload);
+
+      setGenerated(record.payload);
+      setCompliancePassed(record.payload.compliance.passed === true && gate.valid);
+      setViolations(record.payload.compliance.violations);
+      setValidationErrors(gate.valid ? [] : gate.errors);
+      setLastSavedAt(new Date(record.createdAt).toLocaleString());
+      setShowJson(true);
+      setActivePreviewTab("visual");
+      setSelectedHistoryCompareId(record.id);
+      setHasFreshGeneration(true);
+      setImportMessage(translate("history.restored"));
+
+      if (resultRevealTimerRef.current) {
+        window.clearTimeout(resultRevealTimerRef.current);
+      }
+      resultRevealTimerRef.current = window.setTimeout(() => {
+        setHasFreshGeneration(false);
+        resultRevealTimerRef.current = null;
+      }, RESULT_REVEAL_MS);
+    },
+    [translate]
+  );
+
+  const handleExportHistoryVersion = useCallback(
+    (id: string) => {
+      const record = restoreGenerationRecord(id);
+      if (!record) return;
+      const safeName = record.projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "le-studio";
+      exportPayload(record.payload, `${safeName}-${record.createdAt.slice(0, 10)}.json`);
+    },
+    [exportPayload]
+  );
+
+  const handleCompareHistoryVersion = useCallback((id: string) => {
+    setSelectedHistoryCompareId(id);
+    setActivePreviewTab("history");
+    setShowJson(true);
+  }, []);
+
+  const handleClearHistory = useCallback(() => {
+    clearGenerationHistory();
+    setGenerationHistory([]);
+    setSelectedHistoryCompareId(null);
+    setImportMessage(translate("history.cleared"));
+  }, [translate]);
+
+  const handleHistoryChange = useCallback(
+    (tab: PreviewTab) => {
+      setActivePreviewTab(tab);
+      setShowJson(true);
+      if (tab === "history") {
+        setGenerationHistory(loadGenerationHistory());
+      }
+    },
+    []
+  );
+
+  const handleShowJsonTab = useCallback(() => showPreviewTab("json"), [showPreviewTab]);
+
+  const handlePreviewTabsChange = handleHistoryChange;
 
   const handleImportDryRun = async () => {
     if (!generated) return;
@@ -647,6 +783,34 @@ function LaunchStudioInner() {
   const latestEventText = latestEvent
     ? `${latestEvent.nodeLabel}: ${latestEvent.message}`
     : translate("timeline.empty");
+  const wordpressPayloadPreview =
+    generated && typeof generated === "object" && "wordpress" in (generated as Record<string, unknown>)
+      ? (generated as Record<string, unknown>).wordpress
+      : null;
+
+  const currentPayload = validation.valid && generated ? (generated as SourceOfTruthExport) : null;
+
+  const historyPanel = (
+    <GenerationHistoryPanel
+      records={generationHistory}
+      currentPayload={currentPayload}
+      selectedCompareId={selectedHistoryCompareId}
+      onCompare={handleCompareHistoryVersion}
+      onRestore={handleRestoreHistoryVersion}
+      onExport={handleExportHistoryVersion}
+      onClear={handleClearHistory}
+    />
+  );
+
+  const payloadPreviewPanel = (
+    <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.035] p-4 xl:p-5 xl:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_70px_rgba(0,0,0,0.4)] xl:backdrop-blur-xl">
+      <h3 className="text-sm font-semibold text-white">{translate("preview.payload")}</h3>
+      <p className="mt-1 text-[11px] text-zinc-500">{translate("preview.payloadNotice")}</p>
+      <pre className="mt-3 max-h-72 overflow-auto rounded-2xl border border-white/10 bg-black/45 p-4 text-xs text-zinc-300">
+        {wordpressPayloadPreview ? JSON.stringify(wordpressPayloadPreview, null, 2) : translate("jsonPreview.empty")}
+      </pre>
+    </div>
+  );
 
   return (
     <div className="app-shell launch-studio-shell relative flex h-[100vh] h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-black text-zinc-100">
@@ -664,7 +828,7 @@ function LaunchStudioInner() {
         <div className="text-xs font-medium tracking-wide text-zinc-500">studio.rubberduck.sk</div>
         <button
           type="button"
-          onClick={() => setShowJson((v) => !v)}
+          onClick={toggleResultPanel}
           className="rounded-full p-1.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
           aria-label={translate("common.codeJsonView")}
           title={translate("common.codeJsonView")}
@@ -695,7 +859,7 @@ function LaunchStudioInner() {
           onLoad={handleLoad}
           onReset={handleReset}
           onAddNode={handleAddNode}
-          onToggleJson={() => setShowJson((v) => !v)}
+          onToggleJson={toggleResultPanel}
           onMagicPrompt={handleMagicPrompt}
           onExport={handleExport}
           isRunning={isRunning}
@@ -941,7 +1105,7 @@ function LaunchStudioInner() {
                   generated={generated}
                   hasFreshGeneration={hasFreshGeneration}
                   canExport={canExport}
-                  onShowJson={() => setShowJson(true)}
+                  onShowPreview={() => showPreviewTab("visual")}
                   onExport={handleExport}
                 />
               </div>
@@ -1013,8 +1177,12 @@ function LaunchStudioInner() {
 	            <section
                 ref={mobileResultRef}
 	              className={`${GLASS_PANEL_SOFT} overflow-auto p-3 xl:hidden ${
-                  hasFreshGeneration ? "result-reveal-card max-h-52 border-emerald-300/35" : "max-h-28"
-                } ${generated || validationErrors.length > 0 || violations.length > 0 || importMessage ? "block" : "hidden"}`}
+                  generated || activePreviewTab === "history"
+                    ? "fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-40 max-h-[58dvh] border-emerald-300/25"
+                    : hasFreshGeneration
+                      ? "result-reveal-card max-h-52 border-emerald-300/35"
+                      : "max-h-28"
+                } ${(showJson && (generated || generationHistory.length > 0)) || validationErrors.length > 0 || violations.length > 0 || importMessage ? "block" : "hidden"}`}
 	              aria-live="polite"
 	            >
               <div className="text-[10px] text-emerald-300">LIVE mode active. Real user inputs required.</div>
@@ -1025,7 +1193,7 @@ function LaunchStudioInner() {
                   <div className="mt-2 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setShowJson(true)}
+                      onClick={handleShowJsonTab}
                       className="rounded-full border border-emerald-200/25 bg-emerald-300/15 px-3 py-1 text-[10px] font-semibold text-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/45"
                       aria-label={translate("app.showJson")}
                     >
@@ -1055,25 +1223,30 @@ function LaunchStudioInner() {
                 </div>
               ) : null}
               {importMessage ? <div className="mt-1 text-[10px] text-zinc-300">{importMessage}</div> : null}
-              {generated ? (
-
-                <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 p-4 text-[10px] text-zinc-300">
-                  <div className="font-semibold text-emerald-200">{translate("jsonPreview.storageTitle")}</div>
-                  <p className="mt-1 text-zinc-400">{translate("jsonPreview.storageBody")}</p>
-
-                  {lastSavedAt ? (
-                    <p className="mt-1 text-emerald-200">
-                      {translate("jsonPreview.storageSaved")}: {lastSavedAt}
-                    </p>
-                  ) : null}
-                  <div className="mt-2 font-semibold text-emerald-200">{translate("jsonPreview.nextTitle")}</div>
-
-                  <ol className="mt-1 list-decimal space-y-1 pl-4 text-zinc-400">
-
-                    <li>{translate("jsonPreview.nextStepExport")}</li>
-                    <li>{translate("jsonPreview.nextStepDryRun")}</li>
-                    <li>{translate("jsonPreview.nextStepWordPress")}</li>
-                  </ol>
+              {generated || generationHistory.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  <PreviewTabs activeTab={activePreviewTab} onChange={handlePreviewTabsChange} />
+                  <div
+                    id={`preview-panel-${activePreviewTab}`}
+                    role="tabpanel"
+                    aria-labelledby={`preview-tab-${activePreviewTab}`}
+                    className="min-h-0"
+                  >
+                    {activePreviewTab === "visual" ? (
+                      <VisualResultPreview
+                        payload={generated}
+                        canExport={canExport}
+                        onExport={handleExport}
+                        onShowJson={handleShowJsonTab}
+                        highlight={hasFreshGeneration}
+                      />
+                    ) : null}
+                    {activePreviewTab === "json" ? (
+                      <JsonPreview data={generated} blocked={!canExport} onExport={handleExport} lastSavedAt={lastSavedAt} highlight={hasFreshGeneration} />
+                    ) : null}
+                    {activePreviewTab === "payload" ? payloadPreviewPanel : null}
+                    {activePreviewTab === "history" ? historyPanel : null}
+                  </div>
                 </div>
               ) : null}
             </section>
@@ -1095,7 +1268,29 @@ function LaunchStudioInner() {
             </div>
             {showJson ? (
               <div ref={desktopJsonRef} className="min-h-[230px] overflow-auto">
-                <JsonPreview data={generated} blocked={!canExport} onExport={handleExport} lastSavedAt={lastSavedAt} highlight={hasFreshGeneration} />
+                <div className="space-y-3">
+                  <PreviewTabs activeTab={activePreviewTab} onChange={handlePreviewTabsChange} />
+                  <div
+                    id={`preview-panel-${activePreviewTab}`}
+                    role="tabpanel"
+                    aria-labelledby={`preview-tab-${activePreviewTab}`}
+                  >
+                    {activePreviewTab === "visual" ? (
+                      <VisualResultPreview
+                        payload={generated}
+                        canExport={canExport}
+                        onExport={handleExport}
+                        onShowJson={handleShowJsonTab}
+                        highlight={hasFreshGeneration}
+                      />
+                    ) : null}
+                    {activePreviewTab === "json" ? (
+                      <JsonPreview data={generated} blocked={!canExport} onExport={handleExport} lastSavedAt={lastSavedAt} highlight={hasFreshGeneration} />
+                    ) : null}
+                    {activePreviewTab === "payload" ? payloadPreviewPanel : null}
+                    {activePreviewTab === "history" ? historyPanel : null}
+                  </div>
+                </div>
               </div>
             ) : null}
             <div className={`${GLASS_PANEL_SOFT} p-4`}>
@@ -1156,7 +1351,7 @@ function LaunchStudioInner() {
           </button>
           <button
             type="button"
-            onClick={() => setShowJson((v) => !v)}
+            onClick={toggleResultPanel}
             aria-label={translate("common.preview")}
             title={translate("common.preview")}
             className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.035] text-zinc-500 transition-colors hover:bg-white/[0.08] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
