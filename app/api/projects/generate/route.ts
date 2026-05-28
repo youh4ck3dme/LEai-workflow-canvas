@@ -71,6 +71,7 @@ export async function POST(request: Request) {
           errorCode: "brief_validation_failed",
           message: "Live mode requires complete real project inputs.",
           status: 422,
+          requestId,
           details: briefErrors,
           mode: isLiveMode() ? "live" : "dry-run",
         },
