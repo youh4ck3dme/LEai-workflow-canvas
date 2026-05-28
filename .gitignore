@@ -15,6 +15,7 @@ node_modules/
 *.log
 *.tmp
 components/workflow/msitral.md
+pnpm-workspace.yaml
 
 # Local QA artifacts
 qa-artifacts/
